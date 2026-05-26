@@ -1,7 +1,7 @@
 /**
  * Shared URL builder for iframe-embedded pages.
- * Used by PurchaseSubscriptionView and CustomPageView to build consistent URLs
- * with user_id, token, theme, lang, ui_mode, src_host, and src parameters.
+ * Builds consistent URLs with user_id, token, theme, lang, ui_mode, src_host,
+ * and src parameters for embedded pages that explicitly need host context.
  */
 
 const EMBEDDED_USER_ID_QUERY_KEY = 'user_id'

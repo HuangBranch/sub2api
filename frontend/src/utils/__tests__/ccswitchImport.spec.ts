@@ -34,6 +34,32 @@ describe('ccswitchImport utils', () => {
     expect(atob(params.get('usageScript') || '')).toBe(baseInput.usageScript)
   })
 
+  it('uses the configured default model for OpenAI imports', () => {
+    const params = paramsFromDeeplink(
+      buildCcSwitchImportDeeplink({
+        ...baseInput,
+        platform: 'openai',
+        clientType: 'claude',
+        defaultModel: ' codex-custom '
+      })
+    )
+
+    expect(params.get('model')).toBe('codex-custom')
+  })
+
+  it('falls back to the built-in Codex model when the configured model is blank', () => {
+    const params = paramsFromDeeplink(
+      buildCcSwitchImportDeeplink({
+        ...baseInput,
+        platform: 'openai',
+        clientType: 'claude',
+        defaultModel: '   '
+      })
+    )
+
+    expect(params.get('model')).toBe(OPENAI_CC_SWITCH_CODEX_MODEL)
+  })
+
   it.each([
     { platform: 'anthropic' as GroupPlatform, clientType: 'claude' as const, app: 'claude' },
     { platform: 'gemini' as GroupPlatform, clientType: 'gemini' as const, app: 'gemini' }
@@ -42,7 +68,8 @@ describe('ccswitchImport utils', () => {
       buildCcSwitchImportDeeplink({
         ...baseInput,
         platform,
-        clientType
+        clientType,
+        defaultModel: 'codex-custom'
       })
     )
 
@@ -56,7 +83,8 @@ describe('ccswitchImport utils', () => {
       buildCcSwitchImportDeeplink({
         ...baseInput,
         platform: 'antigravity',
-        clientType: 'gemini'
+        clientType: 'gemini',
+        defaultModel: 'codex-custom'
       })
     )
 

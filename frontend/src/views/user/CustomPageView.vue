@@ -116,7 +116,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
+import { computed, nextTick, onMounted, ref, watch } from 'vue'
 import { useRoute } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 import { useAppStore } from '@/stores'
@@ -124,7 +124,6 @@ import { useAuthStore } from '@/stores/auth'
 import { useAdminSettingsStore } from '@/stores/adminSettings'
 import AppLayout from '@/components/layout/AppLayout.vue'
 import Icon from '@/components/icons/Icon.vue'
-import { buildEmbeddedUrl, detectTheme } from '@/utils/embedded-url'
 import { marked } from 'marked'
 import DOMPurify from 'dompurify'
 
@@ -134,20 +133,18 @@ interface TocItem {
   level: number
 }
 
-const { t, locale } = useI18n()
+const { t } = useI18n()
 const route = useRoute()
 const appStore = useAppStore()
 const authStore = useAuthStore()
 const adminSettingsStore = useAdminSettingsStore()
 
 const loading = ref(false)
-const pageTheme = ref<'light' | 'dark'>('light')
 const renderedHtml = ref('')
 const markdownContainer = ref<HTMLElement | null>(null)
 const tocItems = ref<TocItem[]>([])
 const tocVisible = ref(typeof window !== 'undefined' ? window.innerWidth > 768 : true)
 const activeHeadingId = ref('')
-let themeObserver: MutationObserver | null = null
 
 const menuItemId = computed(() => route.params.id as string)
 
@@ -174,13 +171,7 @@ const isMarkdownMode = computed(() => !!markdownSlug.value)
 
 const embeddedUrl = computed(() => {
   if (!menuItem.value || isMarkdownMode.value) return ''
-  return buildEmbeddedUrl(
-    menuItem.value.url,
-    authStore.user?.id,
-    authStore.token,
-    pageTheme.value,
-    locale.value,
-  )
+  return menuItem.value.url?.trim() || ''
 })
 
 const isValidUrl = computed(() => {
@@ -343,31 +334,12 @@ watch(markdownSlug, (slug) => {
 }, { immediate: true })
 
 onMounted(async () => {
-  pageTheme.value = detectTheme()
-
-  if (typeof document !== 'undefined') {
-    themeObserver = new MutationObserver(() => {
-      pageTheme.value = detectTheme()
-    })
-    themeObserver.observe(document.documentElement, {
-      attributes: true,
-      attributeFilter: ['class'],
-    })
-  }
-
   if (appStore.publicSettingsLoaded) return
   loading.value = true
   try {
     await appStore.fetchPublicSettings()
   } finally {
     loading.value = false
-  }
-})
-
-onUnmounted(() => {
-  if (themeObserver) {
-    themeObserver.disconnect()
-    themeObserver = null
   }
 })
 </script>

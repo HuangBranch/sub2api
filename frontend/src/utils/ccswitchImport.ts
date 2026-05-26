@@ -17,12 +17,18 @@ export interface CcSwitchImportDeeplinkInput {
   providerName: string
   apiKey: string
   usageScript: string
+  defaultModel?: string
+}
+
+function normalizeOpenAiCodexModel(model?: string): string {
+  return model?.trim() || OPENAI_CC_SWITCH_CODEX_MODEL
 }
 
 export function resolveCcSwitchImportConfig(
   platform: GroupPlatform | undefined | null,
   clientType: CcSwitchClientType,
-  baseUrl: string
+  baseUrl: string,
+  defaultModel?: string
 ): CcSwitchImportConfig {
   switch (platform || 'anthropic') {
     case 'antigravity':
@@ -34,7 +40,7 @@ export function resolveCcSwitchImportConfig(
       return {
         app: 'codex',
         endpoint: baseUrl,
-        model: OPENAI_CC_SWITCH_CODEX_MODEL
+        model: normalizeOpenAiCodexModel(defaultModel)
       }
     case 'gemini':
       return {
@@ -50,7 +56,12 @@ export function resolveCcSwitchImportConfig(
 }
 
 export function buildCcSwitchImportDeeplink(input: CcSwitchImportDeeplinkInput): string {
-  const config = resolveCcSwitchImportConfig(input.platform, input.clientType, input.baseUrl)
+  const config = resolveCcSwitchImportConfig(
+    input.platform,
+    input.clientType,
+    input.baseUrl,
+    input.defaultModel
+  )
   const entries: [string, string][] = [
     ['resource', 'provider'],
     ['app', config.app],
