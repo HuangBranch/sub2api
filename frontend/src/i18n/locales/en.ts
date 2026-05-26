@@ -693,9 +693,6 @@ export default {
     copyToClipboard: 'Copy to clipboard',
     copied: 'Copied!',
     importToCcSwitch: 'Import to CCS',
-    ccsDefaultModel: 'CCS Default Model',
-    ccsDefaultModelPlaceholder: 'For example gpt-5.4',
-    ccsDefaultModelHint: 'Used when importing OpenAI/Codex keys. Blank falls back to the default.',
     enable: 'Enable',
     disable: 'Disable',
     nameLabel: 'Name',
@@ -5560,6 +5557,10 @@ export default {
         apiBaseUrlPlaceholder: 'https://api.example.com',
         apiBaseUrlHint:
           'Used for "Use Key" and "Import to CC Switch" features. Leave empty to use current site URL.',
+        ccsDefaultModel: 'CCS Default Model',
+        ccsDefaultModelPlaceholder: 'For example gpt-5.4',
+        ccsDefaultModelHint:
+          'Used when importing OpenAI/Codex keys to CCS. Blank falls back to the default.',
         tablePreferencesTitle: 'Global Table Preferences',
         tablePreferencesDescription: 'Configure default pagination behavior for shared table components',
         tableDefaultPageSize: 'Default Rows Per Page',

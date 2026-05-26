@@ -204,6 +204,7 @@ export interface PublicSettings {
   site_logo: string
   site_subtitle: string
   api_base_url: string
+  ccs_default_model?: string
   contact_info: string
   doc_url: string
   home_content: string
@@ -1854,11 +1855,3 @@ export interface UpdateScheduledTestPlanRequest {
 
 // Payment types
 export type { SubscriptionPlan, PaymentOrder, CheckoutInfoResponse } from './payment'
-
-export type {
-  PlatformQuotaItem,
-  PlatformQuotaUpdateItem,
-  PlatformQuotaPlatform,
-  PlatformQuotaWindow,
-  PlatformQuotasResponse,
-} from '@/api/admin/users'

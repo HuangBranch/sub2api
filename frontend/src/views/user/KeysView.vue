@@ -28,23 +28,6 @@
             :api-base-url="publicSettings?.api_base_url || ''"
             :custom-endpoints="publicSettings?.custom_endpoints || []"
           />
-          <div
-            v-if="!publicSettings?.hide_ccs_import_button"
-            class="flex flex-wrap items-center gap-2 text-xs text-gray-500 dark:text-dark-400"
-          >
-            <label for="ccs-default-model" class="font-medium text-gray-700 dark:text-dark-200">
-              {{ t('keys.ccsDefaultModel') }}
-            </label>
-            <input
-              id="ccs-default-model"
-              v-model.trim="ccsDefaultModel"
-              type="text"
-              class="input h-8 w-full max-w-[14rem] py-1 text-xs font-mono sm:w-56"
-              :placeholder="t('keys.ccsDefaultModelPlaceholder')"
-              @blur="normalizeCcsDefaultModelInput"
-            />
-            <span>{{ t('keys.ccsDefaultModelHint') }}</span>
-          </div>
         </div>
       </template>
 
@@ -1062,7 +1045,7 @@
 </template>
 
 <script setup lang="ts">
-	import { ref, computed, onMounted, onUnmounted, watch, type ComponentPublicInstance } from 'vue'
+	import { ref, computed, onMounted, onUnmounted, type ComponentPublicInstance } from 'vue'
 	import { useI18n } from 'vue-i18n'
 	import { useAppStore } from '@/stores/app'
 	import { useOnboardingStore } from '@/stores/onboarding'
@@ -1095,8 +1078,6 @@ import {
   buildCcSwitchImportDeeplink,
   type CcSwitchClientType
 } from '@/utils/ccswitchImport'
-
-const CCS_DEFAULT_MODEL_STORAGE_KEY = 'sub2api.ccsDefaultModel'
 
 // Helper to format date for datetime-local input
 const formatDateTimeLocal = (isoDate: string): string => {
@@ -1165,7 +1146,6 @@ const showResetRateLimitDialog = ref(false)
 const showUseKeyModal = ref(false)
 const showCcsClientSelect = ref(false)
 const pendingCcsRow = ref<ApiKey | null>(null)
-const ccsDefaultModel = ref(OPENAI_CC_SWITCH_CODEX_MODEL)
 const selectedKey = ref<ApiKey | null>(null)
 const copiedKeyId = ref<number | null>(null)
 const groupSelectorKeyId = ref<number | null>(null)
@@ -1784,29 +1764,8 @@ const closeCcsClientSelect = () => {
   pendingCcsRow.value = null
 }
 
-const getCcsDefaultModel = () => ccsDefaultModel.value.trim() || OPENAI_CC_SWITCH_CODEX_MODEL
-
-const loadCcsDefaultModel = () => {
-  if (typeof window === 'undefined') return
-  const saved = window.localStorage.getItem(CCS_DEFAULT_MODEL_STORAGE_KEY)?.trim()
-  if (saved) {
-    ccsDefaultModel.value = saved
-  }
-}
-
-const normalizeCcsDefaultModelInput = () => {
-  ccsDefaultModel.value = getCcsDefaultModel()
-}
-
-watch(ccsDefaultModel, (value) => {
-  if (typeof window === 'undefined') return
-  const normalized = value.trim()
-  if (normalized) {
-    window.localStorage.setItem(CCS_DEFAULT_MODEL_STORAGE_KEY, normalized)
-  } else {
-    window.localStorage.removeItem(CCS_DEFAULT_MODEL_STORAGE_KEY)
-  }
-})
+const getCcsDefaultModel = () =>
+  publicSettings.value?.ccs_default_model?.trim() || OPENAI_CC_SWITCH_CODEX_MODEL
 
 function formatResetTime(resetAt: string | null): string {
   if (!resetAt) return ''
@@ -1821,7 +1780,6 @@ function formatResetTime(resetAt: string | null): string {
 }
 
 onMounted(() => {
-  loadCcsDefaultModel()
   loadApiKeys()
   loadGroups()
   loadUserGroupRates()
