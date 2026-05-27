@@ -25,8 +25,8 @@ type ScheduledTestFailureNotifier interface {
 }
 
 type PNRPAccountFailureEmailNotifier struct {
-	accountRepo AccountRepository
-	opsService  *OpsService
+	accountRepo  AccountRepository
+	opsService   *OpsService
 	emailService *EmailService
 	settingRepo  SettingRepository
 }
@@ -43,8 +43,8 @@ func NewPNRPAccountFailureEmailNotifier(
 	settingRepo SettingRepository,
 ) *PNRPAccountFailureEmailNotifier {
 	return &PNRPAccountFailureEmailNotifier{
-		accountRepo: accountRepo,
-		opsService:  opsService,
+		accountRepo:  accountRepo,
+		opsService:   opsService,
 		emailService: emailService,
 		settingRepo:  settingRepo,
 	}

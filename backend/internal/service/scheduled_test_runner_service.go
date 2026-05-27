@@ -14,10 +14,10 @@ const scheduledTestDefaultMaxWorkers = 10
 
 // ScheduledTestRunnerService periodically scans due test plans and executes them.
 type ScheduledTestRunnerService struct {
-	planRepo       ScheduledTestPlanRepository
-	scheduledSvc   *ScheduledTestService
-	accountTestSvc *AccountTestService
-	rateLimitSvc   *RateLimitService
+	planRepo        ScheduledTestPlanRepository
+	scheduledSvc    *ScheduledTestService
+	accountTestSvc  *AccountTestService
+	rateLimitSvc    *RateLimitService
 	failureNotifier ScheduledTestFailureNotifier
 	cfg             *config.Config
 
