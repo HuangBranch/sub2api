@@ -65,10 +65,8 @@
               <!-- More Tools Dropdown -->
               <div class="relative" ref="accountToolsDropdownRef">
                 <button
-                  @click="
-                    showAccountToolsDropdown = !showAccountToolsDropdown;
-                    showAutoRefreshDropdown = false
-                  "
+                  ref="accountToolsButtonRef"
+                  @click="toggleAccountToolsDropdown"
                   class="btn btn-secondary px-2 md:px-3"
                   :title="t('admin.accounts.moreActions')"
                 >
@@ -76,90 +74,94 @@
                   <span class="hidden md:inline">{{ t('admin.accounts.moreActions') }}</span>
                   <Icon name="chevronDown" size="xs" class="ml-1 hidden md:inline" />
                 </button>
-                <div
-                  v-if="showAccountToolsDropdown"
-                  class="absolute right-0 z-50 mt-2 w-[min(20rem,calc(100vw-2rem))] origin-top-right overflow-hidden rounded-lg border border-gray-200 bg-white shadow-xl dark:border-gray-700 dark:bg-gray-800"
-                >
-                  <div class="max-h-[70vh] overflow-y-auto p-2">
-                    <div class="px-2 py-2">
-                      <div class="text-xs font-semibold uppercase tracking-wide text-gray-400 dark:text-gray-500">
-                        {{ t('admin.accounts.dataActions') }}
+                <Teleport to="body">
+                  <div
+                    v-if="showAccountToolsDropdown"
+                    ref="accountToolsMenuRef"
+                    class="fixed z-50 origin-top-right overflow-hidden rounded-lg border border-gray-200 bg-white shadow-xl dark:border-gray-700 dark:bg-gray-800"
+                    :style="accountToolsDropdownStyle"
+                  >
+                    <div class="overflow-y-auto p-2" :style="{ maxHeight: accountToolsDropdownMaxHeight }">
+                      <div class="px-2 py-2">
+                        <div class="text-xs font-semibold uppercase tracking-wide text-gray-400 dark:text-gray-500">
+                          {{ t('admin.accounts.dataActions') }}
+                        </div>
                       </div>
-                    </div>
-                    <button class="account-tools-menu-item" @click="openSyncFromCrs">
-                      <span class="account-tools-menu-icon bg-blue-50 text-blue-600 dark:bg-blue-900/30 dark:text-blue-300">
-                        <Icon name="sync" size="sm" />
-                      </span>
-                      <span class="flex-1 text-left">{{ t('admin.accounts.syncFromCrs') }}</span>
-                    </button>
-                    <button class="account-tools-menu-item" @click="openBulkUploadAccounts">
-                      <span class="account-tools-menu-icon bg-cyan-50 text-cyan-600 dark:bg-cyan-900/30 dark:text-cyan-300">
-                        <Icon name="userPlus" size="sm" />
-                      </span>
-                      <span class="flex-1 text-left">{{ t('admin.accounts.bulkUpload') }}</span>
-                    </button>
-                    <button class="account-tools-menu-item" @click="openImportData">
-                      <span class="account-tools-menu-icon bg-emerald-50 text-emerald-600 dark:bg-emerald-900/30 dark:text-emerald-300">
-                        <Icon name="upload" size="sm" />
-                      </span>
-                      <span class="flex-1 text-left">{{ t('admin.accounts.dataImport') }}</span>
-                    </button>
-                    <button class="account-tools-menu-item" @click="openExportDataDialogFromMenu">
-                      <span class="account-tools-menu-icon bg-violet-50 text-violet-600 dark:bg-violet-900/30 dark:text-violet-300">
-                        <Icon name="download" size="sm" />
-                      </span>
-                      <span class="flex-1 text-left">
-                        {{ selIds.length ? t('admin.accounts.dataExportSelected') : t('admin.accounts.dataExport') }}
-                      </span>
-                      <span
-                        v-if="selIds.length"
-                        class="rounded-full bg-primary-100 px-2 py-0.5 text-xs font-medium text-primary-700 dark:bg-primary-900/40 dark:text-primary-300"
-                      >
-                        {{ t('admin.accounts.selectedCount', { count: selIds.length }) }}
-                      </span>
-                    </button>
-
-                    <div class="my-2 border-t border-gray-100 dark:border-gray-700"></div>
-                    <div class="px-2 py-2">
-                      <div class="text-xs font-semibold uppercase tracking-wide text-gray-400 dark:text-gray-500">
-                        {{ t('admin.accounts.toolActions') }}
-                      </div>
-                    </div>
-                    <button class="account-tools-menu-item" @click="openErrorPassthrough">
-                      <span class="account-tools-menu-icon bg-amber-50 text-amber-600 dark:bg-amber-900/30 dark:text-amber-300">
-                        <Icon name="shield" size="sm" />
-                      </span>
-                      <span class="flex-1 text-left">{{ t('admin.errorPassthrough.title') }}</span>
-                    </button>
-                    <button class="account-tools-menu-item" @click="openTLSFingerprintProfiles">
-                      <span class="account-tools-menu-icon bg-slate-100 text-slate-600 dark:bg-slate-700 dark:text-slate-200">
-                        <Icon name="lock" size="sm" />
-                      </span>
-                      <span class="flex-1 text-left">{{ t('admin.tlsFingerprintProfiles.title') }}</span>
-                    </button>
-
-                    <div class="my-2 border-t border-gray-100 dark:border-gray-700"></div>
-                    <div class="px-2 py-2">
-                      <div class="flex items-center justify-between gap-3">
-                        <span class="text-xs font-semibold uppercase tracking-wide text-gray-400 dark:text-gray-500">
-                          {{ t('admin.accounts.viewColumns') }}
+                      <button class="account-tools-menu-item" @click="openSyncFromCrs">
+                        <span class="account-tools-menu-icon bg-blue-50 text-blue-600 dark:bg-blue-900/30 dark:text-blue-300">
+                          <Icon name="sync" size="sm" />
                         </span>
-                        <Icon name="grid" size="sm" class="text-gray-400" />
-                      </div>
-                    </div>
-                    <div class="grid grid-cols-1 gap-1">
-                      <button
-                        v-for="col in toggleableColumns"
-                        :key="col.key"
-                        @click="toggleColumn(col.key)"
-                        class="flex w-full items-center justify-between rounded-md px-3 py-2 text-sm text-gray-700 transition-colors hover:bg-gray-100 dark:text-gray-200 dark:hover:bg-gray-700"
-                      >
-                        <span class="truncate">{{ col.label }}</span>
-                        <Icon v-if="isColumnVisible(col.key)" name="check" size="sm" class="text-primary-500" />
+                        <span class="flex-1 text-left">{{ t('admin.accounts.syncFromCrs') }}</span>
                       </button>
+                      <button class="account-tools-menu-item" @click="openBulkImportAccounts">
+                        <span class="account-tools-menu-icon bg-cyan-50 text-cyan-600 dark:bg-cyan-900/30 dark:text-cyan-300">
+                          <Icon name="userPlus" size="sm" />
+                        </span>
+                        <span class="flex-1 text-left">{{ t('admin.accounts.bulkUpload') }}</span>
+                      </button>
+                      <button class="account-tools-menu-item" @click="openImportData">
+                        <span class="account-tools-menu-icon bg-emerald-50 text-emerald-600 dark:bg-emerald-900/30 dark:text-emerald-300">
+                          <Icon name="upload" size="sm" />
+                        </span>
+                        <span class="flex-1 text-left">{{ t('admin.accounts.dataImport') }}</span>
+                      </button>
+                      <button class="account-tools-menu-item" @click="openExportDataDialogFromMenu">
+                        <span class="account-tools-menu-icon bg-violet-50 text-violet-600 dark:bg-violet-900/30 dark:text-violet-300">
+                          <Icon name="download" size="sm" />
+                        </span>
+                        <span class="flex-1 text-left">
+                          {{ selIds.length ? t('admin.accounts.dataExportSelected') : t('admin.accounts.dataExport') }}
+                        </span>
+                        <span
+                          v-if="selIds.length"
+                          class="rounded-full bg-primary-100 px-2 py-0.5 text-xs font-medium text-primary-700 dark:bg-primary-900/40 dark:text-primary-300"
+                        >
+                          {{ t('admin.accounts.selectedCount', { count: selIds.length }) }}
+                        </span>
+                      </button>
+
+                      <div class="my-2 border-t border-gray-100 dark:border-gray-700"></div>
+                      <div class="px-2 py-2">
+                        <div class="text-xs font-semibold uppercase tracking-wide text-gray-400 dark:text-gray-500">
+                          {{ t('admin.accounts.toolActions') }}
+                        </div>
+                      </div>
+                      <button class="account-tools-menu-item" @click="openErrorPassthrough">
+                        <span class="account-tools-menu-icon bg-amber-50 text-amber-600 dark:bg-amber-900/30 dark:text-amber-300">
+                          <Icon name="shield" size="sm" />
+                        </span>
+                        <span class="flex-1 text-left">{{ t('admin.errorPassthrough.title') }}</span>
+                      </button>
+                      <button class="account-tools-menu-item" @click="openTLSFingerprintProfiles">
+                        <span class="account-tools-menu-icon bg-slate-100 text-slate-600 dark:bg-slate-700 dark:text-slate-200">
+                          <Icon name="lock" size="sm" />
+                        </span>
+                        <span class="flex-1 text-left">{{ t('admin.tlsFingerprintProfiles.title') }}</span>
+                      </button>
+
+                      <div class="my-2 border-t border-gray-100 dark:border-gray-700"></div>
+                      <div class="px-2 py-2">
+                        <div class="flex items-center justify-between gap-3">
+                          <span class="text-xs font-semibold uppercase tracking-wide text-gray-400 dark:text-gray-500">
+                            {{ t('admin.accounts.viewColumns') }}
+                          </span>
+                          <Icon name="grid" size="sm" class="text-gray-400" />
+                        </div>
+                      </div>
+                      <div class="grid grid-cols-1 gap-1">
+                        <button
+                          v-for="col in toggleableColumns"
+                          :key="col.key"
+                          @click="toggleColumn(col.key)"
+                          class="flex w-full items-center justify-between rounded-md px-3 py-2 text-sm text-gray-700 transition-colors hover:bg-gray-100 dark:text-gray-200 dark:hover:bg-gray-700"
+                        >
+                          <span class="truncate">{{ col.label }}</span>
+                          <Icon v-if="isColumnVisible(col.key)" name="check" size="sm" class="text-primary-500" />
+                        </button>
+                      </div>
                     </div>
                   </div>
-                </div>
+                </Teleport>
               </div>
             </template>
           </AccountTableActions>
@@ -351,7 +353,6 @@
       :show="showCreate"
       :proxies="proxies"
       :groups="groups"
-      :initial-mode="createInitialMode"
       @close="handleCreateClose"
       @created="reload"
     />
@@ -362,6 +363,7 @@
     <ScheduledTestsPanel :show="showSchedulePanel" :account-id="scheduleAcc?.id ?? null" :model-options="scheduleModelOptions" @close="closeSchedulePanel" />
     <AccountActionMenu :show="menu.show" :account="menu.acc" :position="menu.pos" @close="menu.show = false" @test="handleTest" @stats="handleViewStats" @schedule="handleSchedule" @reauth="handleReAuth" @refresh-token="handleRefresh" @recover-state="handleRecoverState" @reset-quota="handleResetQuota" @set-privacy="handleSetPrivacy" />
     <SyncFromCrsModal :show="showSync" @close="showSync = false" @synced="reload" />
+    <BulkDataImportModal :show="showBulkDataImport" @close="showBulkDataImport = false" @imported="handleBulkDataImported" />
     <ImportDataModal :show="showImportData" @close="showImportData = false" @imported="handleDataImported" />
     <BulkEditAccountModal
       :show="showBulkEdit"
@@ -388,7 +390,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, reactive, computed, onMounted, onUnmounted, toRaw, watch } from 'vue'
+import { ref, reactive, computed, nextTick, onMounted, onUnmounted, toRaw, watch } from 'vue'
 import { useIntervalFn } from '@vueuse/core'
 import { useI18n } from 'vue-i18n'
 import { useAppStore } from '@/stores/app'
@@ -407,6 +409,7 @@ import AccountTableActions from '@/components/admin/account/AccountTableActions.
 import AccountTableFilters from '@/components/admin/account/AccountTableFilters.vue'
 import AccountBulkActionsBar from '@/components/admin/account/AccountBulkActionsBar.vue'
 import AccountActionMenu from '@/components/admin/account/AccountActionMenu.vue'
+import BulkDataImportModal from '@/components/admin/account/BulkDataImportModal.vue'
 import ImportDataModal from '@/components/admin/account/ImportDataModal.vue'
 import ReAuthAccountModal from '@/components/admin/account/ReAuthAccountModal.vue'
 import AccountTestModal from '@/components/admin/account/AccountTestModal.vue'
@@ -475,9 +478,9 @@ const selTypes = computed<AccountType[]>(() => {
   return [...types]
 })
 const showCreate = ref(false)
-const createInitialMode = ref<'default' | 'openai-bulk-upload'>('default')
 const showEdit = ref(false)
 const showSync = ref(false)
+const showBulkDataImport = ref(false)
 const showImportData = ref(false)
 const showExportDataDialog = ref(false)
 const includeProxyOnExport = ref(true)
@@ -506,6 +509,10 @@ const exportingData = ref(false)
 // Account tools dropdown
 const showAccountToolsDropdown = ref(false)
 const accountToolsDropdownRef = ref<HTMLElement | null>(null)
+const accountToolsButtonRef = ref<HTMLElement | null>(null)
+const accountToolsMenuRef = ref<HTMLElement | null>(null)
+const accountToolsDropdownStyle = ref<Record<string, string>>({})
+const accountToolsDropdownMaxHeight = ref('70vh')
 const hiddenColumns = reactive<Set<string>>(new Set())
 const DEFAULT_HIDDEN_COLUMNS = ['today_stats', 'proxy', 'notes', 'priority', 'rate_multiplier']
 const HIDDEN_COLUMNS_KEY = 'account-hidden-columns'
@@ -857,6 +864,7 @@ const isAnyModalOpen = computed(() => {
     showCreate.value ||
     showEdit.value ||
     showSync.value ||
+    showBulkDataImport.value ||
     showImportData.value ||
     showExportDataDialog.value ||
     showBulkEdit.value ||
@@ -982,20 +990,63 @@ const closeAccountToolsDropdown = () => {
   showAccountToolsDropdown.value = false
 }
 
+const updateAccountToolsDropdownPosition = () => {
+  const button = accountToolsButtonRef.value
+  if (!button) return
+
+  const rect = button.getBoundingClientRect()
+  const padding = 16
+  const gap = 8
+  const viewportWidth = window.innerWidth
+  const viewportHeight = window.innerHeight
+  const width = Math.min(320, Math.max(240, viewportWidth - padding * 2))
+  const menuHeight = accountToolsMenuRef.value?.offsetHeight ?? 360
+
+  let left = rect.right - width
+  if (viewportWidth < 768) {
+    left = Math.min(
+      viewportWidth - width - padding,
+      Math.max(padding, rect.left + rect.width / 2 - width / 2)
+    )
+  } else {
+    left = Math.min(viewportWidth - width - padding, Math.max(padding, left))
+  }
+
+  let top = rect.bottom + gap
+  if (top + menuHeight > viewportHeight - padding) {
+    top = Math.max(padding, rect.top - menuHeight - gap)
+  }
+
+  accountToolsDropdownMaxHeight.value = `${Math.max(180, viewportHeight - top - padding)}px`
+  accountToolsDropdownStyle.value = {
+    left: `${left}px`,
+    top: `${top}px`,
+    width: `${width}px`
+  }
+}
+
+const toggleAccountToolsDropdown = async () => {
+  showAccountToolsDropdown.value = !showAccountToolsDropdown.value
+  showAutoRefreshDropdown.value = false
+  if (showAccountToolsDropdown.value) {
+    updateAccountToolsDropdownPosition()
+    await nextTick()
+    updateAccountToolsDropdownPosition()
+  }
+}
+
 const openSyncFromCrs = () => {
   closeAccountToolsDropdown()
   showSync.value = true
 }
 
-const openBulkUploadAccounts = () => {
+const openBulkImportAccounts = () => {
   closeAccountToolsDropdown()
-  createInitialMode.value = 'openai-bulk-upload'
-  showCreate.value = true
+  showBulkDataImport.value = true
 }
 
 const handleCreateClose = () => {
   showCreate.value = false
-  createInitialMode.value = 'default'
 }
 
 const openImportData = () => {
@@ -1414,6 +1465,7 @@ const handleBulkUpdated = () => {
   clearSelection()
   reload()
 }
+const handleBulkDataImported = () => { showBulkDataImport.value = false; reload() }
 const handleDataImported = () => { showImportData.value = false; reload() }
 const ACCOUNT_UNGROUPED_GROUP_QUERY_VALUE = 'ungrouped'
 const ACCOUNT_PRIVACY_MODE_UNSET_QUERY_VALUE = '__unset__'
@@ -1677,12 +1729,19 @@ const isExpired = (value: number | null) => {
 // 滚动时关闭操作菜单（不关闭列设置下拉菜单）
 const handleScroll = () => {
   menu.show = false
+  if (showAccountToolsDropdown.value) {
+    updateAccountToolsDropdownPosition()
+  }
 }
 
 // 点击外部关闭顶部下拉菜单
 const handleClickOutside = (event: MouseEvent) => {
   const target = event.target as HTMLElement
-  if (accountToolsDropdownRef.value && !accountToolsDropdownRef.value.contains(target)) {
+  if (
+    accountToolsDropdownRef.value &&
+    !accountToolsDropdownRef.value.contains(target) &&
+    !accountToolsMenuRef.value?.contains(target)
+  ) {
     showAccountToolsDropdown.value = false
   }
   if (autoRefreshDropdownRef.value && !autoRefreshDropdownRef.value.contains(target)) {
@@ -1700,6 +1759,7 @@ onMounted(async () => {
     console.error('Failed to load proxies/groups:', error)
   }
   window.addEventListener('scroll', handleScroll, true)
+  window.addEventListener('resize', updateAccountToolsDropdownPosition)
   document.addEventListener('click', handleClickOutside)
 
   if (autoRefreshEnabled.value) {
@@ -1712,6 +1772,7 @@ onMounted(async () => {
 
 onUnmounted(() => {
   window.removeEventListener('scroll', handleScroll, true)
+  window.removeEventListener('resize', updateAccountToolsDropdownPosition)
   document.removeEventListener('click', handleClickOutside)
 })
 </script>
