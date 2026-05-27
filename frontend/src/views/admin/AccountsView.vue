@@ -132,6 +132,12 @@
                         </span>
                         <span class="flex-1 text-left">{{ t('admin.errorPassthrough.title') }}</span>
                       </button>
+                      <button class="account-tools-menu-item" @click="openAccountAlertConfig">
+                        <span class="account-tools-menu-icon bg-red-50 text-red-600 dark:bg-red-900/30 dark:text-red-300">
+                          <Icon name="bell" size="sm" />
+                        </span>
+                        <span class="flex-1 text-left">{{ t('admin.accounts.alertConfig.menuTitle') }}</span>
+                      </button>
                       <button class="account-tools-menu-item" @click="openTLSFingerprintProfiles">
                         <span class="account-tools-menu-icon bg-slate-100 text-slate-600 dark:bg-slate-700 dark:text-slate-200">
                           <Icon name="lock" size="sm" />
@@ -388,6 +394,7 @@
       </label>
     </ConfirmDialog>
     <ErrorPassthroughRulesModal :show="showErrorPassthrough" @close="showErrorPassthrough = false" />
+    <AccountAlertConfigModal :show="showAccountAlertConfig" @close="showAccountAlertConfig = false" />
     <TLSFingerprintProfilesModal :show="showTLSFingerprintProfiles" @close="showTLSFingerprintProfiles = false" />
   </AppLayout>
 </template>
@@ -427,6 +434,7 @@ import AccountCapacityCell from '@/components/account/AccountCapacityCell.vue'
 import PlatformTypeBadge from '@/components/common/PlatformTypeBadge.vue'
 import Icon from '@/components/icons/Icon.vue'
 import ErrorPassthroughRulesModal from '@/components/admin/ErrorPassthroughRulesModal.vue'
+import AccountAlertConfigModal from '@/components/admin/account/AccountAlertConfigModal.vue'
 import TLSFingerprintProfilesModal from '@/components/admin/TLSFingerprintProfilesModal.vue'
 import { buildOpenAIUsageRefreshKey } from '@/utils/accountUsageRefresh'
 import { extractApiErrorMessage } from '@/utils/apiError'
@@ -495,6 +503,7 @@ const showReAuth = ref(false)
 const showTest = ref(false)
 const showStats = ref(false)
 const showErrorPassthrough = ref(false)
+const showAccountAlertConfig = ref(false)
 const showTLSFingerprintProfiles = ref(false)
 const edAcc = ref<Account | null>(null)
 const tempUnschedAcc = ref<Account | null>(null)
@@ -879,6 +888,7 @@ const isAnyModalOpen = computed(() => {
     showStats.value ||
     showSchedulePanel.value ||
     showErrorPassthrough.value ||
+    showAccountAlertConfig.value ||
     showTLSFingerprintProfiles.value
   )
 })
@@ -1066,6 +1076,11 @@ const openExportDataDialogFromMenu = () => {
 const openErrorPassthrough = () => {
   closeAccountToolsDropdown()
   showErrorPassthrough.value = true
+}
+
+const openAccountAlertConfig = () => {
+  closeAccountToolsDropdown()
+  showAccountAlertConfig.value = true
 }
 
 const openTLSFingerprintProfiles = () => {

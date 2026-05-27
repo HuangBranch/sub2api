@@ -64,6 +64,19 @@ export interface AccountListWithEtagResult {
   data: PaginatedResponse<Account> | null
 }
 
+export interface PNRPAccountAlertConfig {
+  enabled: boolean
+  use_ops_email_recipients: boolean
+  recipients: string[]
+  scheduled_test_failure_enabled: boolean
+  rate_limit_failure_enabled: boolean
+  error_failure_enabled: boolean
+  min_available_accounts_enabled: boolean
+  min_available_accounts: number
+  cooldown_minutes: number
+  availability_check_interval_minutes: number
+}
+
 export async function listWithEtag(
   page: number = 1,
   pageSize: number = 20,
@@ -606,6 +619,16 @@ export async function getAntigravityDefaultModelMapping(): Promise<Record<string
   return data
 }
 
+export async function getPNRPAccountAlertConfig(): Promise<PNRPAccountAlertConfig> {
+  const { data } = await apiClient.get<PNRPAccountAlertConfig>('/admin/accounts/pnrp-alert-config')
+  return data
+}
+
+export async function updatePNRPAccountAlertConfig(config: PNRPAccountAlertConfig): Promise<PNRPAccountAlertConfig> {
+  const { data } = await apiClient.put<PNRPAccountAlertConfig>('/admin/accounts/pnrp-alert-config', config)
+  return data
+}
+
 /**
  * Refresh OpenAI token using refresh token
  * @param refreshToken - The refresh token
@@ -715,6 +738,8 @@ export const accountsAPI = {
   importData,
   importCodexSession,
   getAntigravityDefaultModelMapping,
+  getPNRPAccountAlertConfig,
+  updatePNRPAccountAlertConfig,
   batchClearError,
   batchRefresh,
   setPrivacy

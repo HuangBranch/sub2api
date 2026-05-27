@@ -13,8 +13,12 @@ import (
 )
 
 const (
-	pnrpAccountFailureAlertCooldown = time.Hour
-	pnrpAccountFailureSettingPrefix = "pnrp_account_failure_alert:"
+	pnrpAccountAlertSettingPrefix = "pnrp_account_alert:"
+)
+
+const (
+	pnrpAccountAlertKindScheduledTest = "scheduled_test"
+	pnrpAccountAlertKindAvailability  = "availability"
 )
 
 // ScheduledTestFailureNotifier is a narrow hook used by the scheduled test runner.
@@ -29,6 +33,7 @@ type PNRPAccountFailureEmailNotifier struct {
 	opsService   *OpsService
 	emailService *EmailService
 	settingRepo  SettingRepository
+	configSvc    *PNRPAccountAlertConfigService
 }
 
 type pnrpAccountFailureAlertState struct {
@@ -41,12 +46,14 @@ func NewPNRPAccountFailureEmailNotifier(
 	opsService *OpsService,
 	emailService *EmailService,
 	settingRepo SettingRepository,
+	configSvc *PNRPAccountAlertConfigService,
 ) *PNRPAccountFailureEmailNotifier {
 	return &PNRPAccountFailureEmailNotifier{
 		accountRepo:  accountRepo,
 		opsService:   opsService,
 		emailService: emailService,
 		settingRepo:  settingRepo,
+		configSvc:    configSvc,
 	}
 }
 
@@ -72,8 +79,23 @@ func (n *PNRPAccountFailureEmailNotifier) NotifyScheduledTestFailure(ctx context
 
 func (n *PNRPAccountFailureEmailNotifier) sendScheduledTestFailureEmail(accountID int64, planID int64, modelID string, errorMessage string, failedAt time.Time) {
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	cfg := n.resolveConfig(ctx)
+	if !cfg.Enabled || !cfg.ScheduledTestFailureEnabled {
+		cancel()
+		return
+	}
+	account := n.getAccount(ctx, accountID)
+	if pnrpIsRateLimitFailure(account, errorMessage) {
+		if !cfg.RateLimitFailureEnabled {
+			cancel()
+			return
+		}
+	} else if !cfg.ErrorFailureEnabled {
+		cancel()
+		return
+	}
 
-	recipients := n.resolveRecipients(ctx)
+	recipients := n.resolveRecipients(ctx, cfg)
 	cancel()
 	if len(recipients) == 0 {
 		return
@@ -81,18 +103,19 @@ func (n *PNRPAccountFailureEmailNotifier) sendScheduledTestFailureEmail(accountI
 
 	errorHash := pnrpAccountFailureHash(accountID, modelID, errorMessage)
 	ctx, cancel = context.WithTimeout(context.Background(), 10*time.Second)
-	if !n.shouldSend(ctx, accountID, errorHash, time.Now().UTC()) {
+	stateKey := pnrpAccountAlertSettingKey(pnrpAccountAlertKindScheduledTest, strconv.FormatInt(accountID, 10))
+	if !n.shouldSend(ctx, stateKey, errorHash, time.Now().UTC(), cfg.Cooldown()) {
 		cancel()
 		return
 	}
 	cancel()
 
 	ctx, cancel = context.WithTimeout(context.Background(), 10*time.Second)
-	account := n.getAccount(ctx, accountID)
 	siteName := n.siteName(ctx)
 	cancel()
-	subject := fmt.Sprintf("[%s] 账号不可用提醒 - %s", sanitizeEmailHeader(siteName), sanitizeEmailHeader(pnrpAccountDisplayName(account, accountID)))
-	body := n.buildEmailBody(siteName, account, accountID, planID, modelID, errorMessage, failedAt)
+	alertTitle := pnrpAccountAlertTitle(account, errorMessage)
+	subject := fmt.Sprintf("[%s] %s - %s", sanitizeEmailHeader(siteName), sanitizeEmailHeader(alertTitle), sanitizeEmailHeader(pnrpAccountDisplayName(account, accountID)))
+	body := n.buildEmailBody(siteName, alertTitle, account, accountID, planID, modelID, errorMessage, failedAt, cfg.CooldownMinutes)
 
 	anySent := false
 	for _, to := range recipients {
@@ -108,19 +131,88 @@ func (n *PNRPAccountFailureEmailNotifier) sendScheduledTestFailureEmail(accountI
 
 	if anySent {
 		ctx, cancel = context.WithTimeout(context.Background(), 10*time.Second)
-		n.rememberSent(ctx, accountID, errorHash, time.Now().UTC())
+		n.rememberSent(ctx, stateKey, errorHash, time.Now().UTC())
 		cancel()
 	}
 }
 
-func (n *PNRPAccountFailureEmailNotifier) resolveRecipients(ctx context.Context) []string {
+func (n *PNRPAccountFailureEmailNotifier) NotifyAvailableAccountThreshold(ctx context.Context) {
+	if n == nil || n.emailService == nil || n.accountRepo == nil {
+		return
+	}
+
+	cfg := n.resolveConfig(ctx)
+	if !cfg.Enabled || !cfg.MinAvailableAccountsEnabled {
+		return
+	}
+
+	availableAccounts, err := n.accountRepo.ListSchedulable(ctx)
+	if err != nil {
+		slog.Warn("pnrp account alert availability load failed", "error", err)
+		return
+	}
+	availableCount := len(availableAccounts)
+	if availableCount >= cfg.MinAvailableAccounts {
+		return
+	}
+
+	recipients := n.resolveRecipients(ctx, cfg)
+	if len(recipients) == 0 {
+		return
+	}
+
+	activeCount := 0
+	if activeAccounts, err := n.accountRepo.ListActive(ctx); err == nil {
+		activeCount = len(activeAccounts)
+	}
+
+	stateKey := pnrpAccountAlertSettingKey(pnrpAccountAlertKindAvailability, "global")
+	errorHash := fmt.Sprintf("%d:%d:%d", availableCount, cfg.MinAvailableAccounts, activeCount)
+	if !n.shouldSend(ctx, stateKey, errorHash, time.Now().UTC(), cfg.Cooldown()) {
+		return
+	}
+
+	siteName := n.siteName(ctx)
+	subject := fmt.Sprintf("[%s] 可用账号不足提醒 - %d/%d", sanitizeEmailHeader(siteName), availableCount, cfg.MinAvailableAccounts)
+	body := n.buildAvailabilityEmailBody(siteName, availableCount, activeCount, cfg.MinAvailableAccounts, cfg.CooldownMinutes)
+
+	anySent := false
+	for _, to := range recipients {
+		sendCtx, sendCancel := context.WithTimeout(context.Background(), emailSendTimeout)
+		err := n.emailService.SendEmail(sendCtx, to, subject, body)
+		sendCancel()
+		if err != nil {
+			slog.Warn("pnrp account availability email send failed", "recipient_hash", notificationEmailHash(to), "error", err)
+			continue
+		}
+		anySent = true
+	}
+
+	if anySent {
+		n.rememberSent(ctx, stateKey, errorHash, time.Now().UTC())
+	}
+}
+
+func (n *PNRPAccountFailureEmailNotifier) resolveConfig(ctx context.Context) PNRPAccountAlertConfig {
+	if n != nil && n.configSvc != nil {
+		cfg, err := n.configSvc.GetConfig(ctx)
+		if err == nil {
+			return cfg
+		}
+		slog.Warn("pnrp account alert config load failed", "error", err)
+	}
+	return DefaultPNRPAccountAlertConfig()
+}
+
+func (n *PNRPAccountFailureEmailNotifier) resolveRecipients(ctx context.Context, cfg PNRPAccountAlertConfig) []string {
 	var raw []string
-	if n.opsService != nil {
+	if cfg.UseOpsEmailRecipients && n.opsService != nil {
 		if cfg, err := n.opsService.GetEmailNotificationConfig(ctx); err == nil && cfg != nil && cfg.Alert.Enabled {
 			raw = append(raw, cfg.Alert.Recipients...)
 		}
 	}
-	if len(raw) == 0 && n.settingRepo != nil {
+	raw = append(raw, cfg.Recipients...)
+	if len(raw) == 0 && cfg.UseOpsEmailRecipients && n.settingRepo != nil {
 		if v, err := n.settingRepo.GetValue(ctx, SettingKeyAccountQuotaNotifyEmails); err == nil {
 			raw = append(raw, filterVerifiedEmails(ParseNotifyEmails(v))...)
 		}
@@ -128,11 +220,11 @@ func (n *PNRPAccountFailureEmailNotifier) resolveRecipients(ctx context.Context)
 	return pnrpDeduplicateEmails(raw)
 }
 
-func (n *PNRPAccountFailureEmailNotifier) shouldSend(ctx context.Context, accountID int64, errorHash string, now time.Time) bool {
-	if n.settingRepo == nil || accountID <= 0 {
+func (n *PNRPAccountFailureEmailNotifier) shouldSend(ctx context.Context, stateKey string, errorHash string, now time.Time, cooldown time.Duration) bool {
+	if n.settingRepo == nil || strings.TrimSpace(stateKey) == "" {
 		return true
 	}
-	raw, err := n.settingRepo.GetValue(ctx, pnrpAccountFailureSettingKey(accountID))
+	raw, err := n.settingRepo.GetValue(ctx, stateKey)
 	if err != nil || strings.TrimSpace(raw) == "" {
 		return true
 	}
@@ -146,19 +238,19 @@ func (n *PNRPAccountFailureEmailNotifier) shouldSend(ctx context.Context, accoun
 	if state.SentAt.IsZero() {
 		return true
 	}
-	return now.Sub(state.SentAt) >= pnrpAccountFailureAlertCooldown
+	return now.Sub(state.SentAt) >= cooldown
 }
 
-func (n *PNRPAccountFailureEmailNotifier) rememberSent(ctx context.Context, accountID int64, errorHash string, sentAt time.Time) {
-	if n.settingRepo == nil || accountID <= 0 {
+func (n *PNRPAccountFailureEmailNotifier) rememberSent(ctx context.Context, stateKey string, errorHash string, sentAt time.Time) {
+	if n.settingRepo == nil || strings.TrimSpace(stateKey) == "" {
 		return
 	}
 	data, err := json.Marshal(pnrpAccountFailureAlertState{ErrorHash: errorHash, SentAt: sentAt})
 	if err != nil {
 		return
 	}
-	if err := n.settingRepo.Set(ctx, pnrpAccountFailureSettingKey(accountID), string(data)); err != nil {
-		slog.Warn("pnrp account failure email state save failed", "account_id", accountID, "error", err)
+	if err := n.settingRepo.Set(ctx, stateKey, string(data)); err != nil {
+		slog.Warn("pnrp account alert email state save failed", "state_key", stateKey, "error", err)
 	}
 }
 
@@ -185,7 +277,7 @@ func (n *PNRPAccountFailureEmailNotifier) siteName(ctx context.Context) string {
 	return strings.TrimSpace(name)
 }
 
-func (n *PNRPAccountFailureEmailNotifier) buildEmailBody(siteName string, account *Account, accountID int64, planID int64, modelID string, errorMessage string, failedAt time.Time) string {
+func (n *PNRPAccountFailureEmailNotifier) buildEmailBody(siteName string, alertTitle string, account *Account, accountID int64, planID int64, modelID string, errorMessage string, failedAt time.Time, cooldownMinutes int) string {
 	accountName := pnrpAccountDisplayName(account, accountID)
 	platform := "-"
 	status := "-"
@@ -211,7 +303,7 @@ func (n *PNRPAccountFailureEmailNotifier) buildEmailBody(siteName string, accoun
 <body style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: #f6f7fb; color: #111827; margin: 0; padding: 24px;">
   <div style="max-width: 640px; margin: 0 auto; background: #ffffff; border: 1px solid #e5e7eb; border-radius: 8px; overflow: hidden;">
     <div style="background: #dc2626; color: #ffffff; padding: 18px 22px;">
-      <h2 style="margin: 0; font-size: 20px;">账号不可用提醒</h2>
+      <h2 style="margin: 0; font-size: 20px;">%s</h2>
     </div>
     <div style="padding: 22px;">
       <p>系统定时检测发现一个上游账号测试失败，请尽快登录后台检查账号状态。</p>
@@ -231,11 +323,12 @@ func (n *PNRPAccountFailureEmailNotifier) buildEmailBody(siteName string, accoun
       </div>
     </div>
     <div style="padding: 14px 22px; background: #f9fafb; color: #6b7280; font-size: 12px;">
-      该邮件由 PNRP 自定义账号检测告警发送。同一账号相同错误 1 小时内只提醒一次。
+      该邮件由 PNRP 自定义账号检测告警发送。同类问题 %d 分钟内只提醒一次。
     </div>
   </div>
 </body>
 </html>`,
+		htmlEscape(alertTitle),
 		htmlEscape(siteName),
 		htmlEscape(accountName),
 		accountID,
@@ -245,11 +338,48 @@ func (n *PNRPAccountFailureEmailNotifier) buildEmailBody(siteName string, accoun
 		htmlEscape(modelID),
 		htmlEscape(failedAt.Format(time.RFC3339)),
 		htmlEscape(errorMessage),
+		cooldownMinutes,
 	)
 }
 
-func pnrpAccountFailureSettingKey(accountID int64) string {
-	return pnrpAccountFailureSettingPrefix + strconv.FormatInt(accountID, 10)
+func (n *PNRPAccountFailureEmailNotifier) buildAvailabilityEmailBody(siteName string, availableCount int, activeCount int, threshold int, cooldownMinutes int) string {
+	return fmt.Sprintf(`<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+</head>
+<body style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: #f6f7fb; color: #111827; margin: 0; padding: 24px;">
+  <div style="max-width: 640px; margin: 0 auto; background: #ffffff; border: 1px solid #e5e7eb; border-radius: 8px; overflow: hidden;">
+    <div style="background: #d97706; color: #ffffff; padding: 18px 22px;">
+      <h2 style="margin: 0; font-size: 20px;">可用账号不足提醒</h2>
+    </div>
+    <div style="padding: 22px;">
+      <p>系统检测到当前可调度账号数量低于你设置的阈值，请尽快登录后台检查账号状态、限流和可调度开关。</p>
+      <table style="width: 100%%; border-collapse: collapse; margin-top: 16px;">
+        <tr><td style="padding: 8px 0; color: #6b7280;">站点</td><td style="padding: 8px 0;">%s</td></tr>
+        <tr><td style="padding: 8px 0; color: #6b7280;">可调度账号数</td><td style="padding: 8px 0;">%d</td></tr>
+        <tr><td style="padding: 8px 0; color: #6b7280;">活跃账号数</td><td style="padding: 8px 0;">%d</td></tr>
+        <tr><td style="padding: 8px 0; color: #6b7280;">告警阈值</td><td style="padding: 8px 0;">%d</td></tr>
+        <tr><td style="padding: 8px 0; color: #6b7280;">检测时间</td><td style="padding: 8px 0;">%s</td></tr>
+      </table>
+    </div>
+    <div style="padding: 14px 22px; background: #f9fafb; color: #6b7280; font-size: 12px;">
+      该邮件由 PNRP 自定义账号检测告警发送。同类问题 %d 分钟内只提醒一次。
+    </div>
+  </div>
+</body>
+</html>`,
+		htmlEscape(siteName),
+		availableCount,
+		activeCount,
+		threshold,
+		htmlEscape(time.Now().UTC().Format(time.RFC3339)),
+		cooldownMinutes,
+	)
+}
+
+func pnrpAccountAlertSettingKey(kind string, id string) string {
+	return pnrpAccountAlertSettingPrefix + strings.TrimSpace(kind) + ":" + strings.TrimSpace(id)
 }
 
 func pnrpAccountFailureHash(accountID int64, modelID string, errorMessage string) string {
@@ -262,6 +392,33 @@ func pnrpAccountDisplayName(account *Account, accountID int64) string {
 		return strings.TrimSpace(account.Name)
 	}
 	return "account-" + strconv.FormatInt(accountID, 10)
+}
+
+func pnrpIsRateLimitFailure(account *Account, errorMessage string) bool {
+	if account != nil {
+		if account.IsRateLimited() {
+			return true
+		}
+	}
+	msg := strings.ToLower(strings.TrimSpace(errorMessage))
+	return strings.Contains(msg, "rate_limit") ||
+		strings.Contains(msg, "rate limit") ||
+		strings.Contains(msg, "rate-limited") ||
+		strings.Contains(msg, "rate limited") ||
+		strings.Contains(msg, "too many requests") ||
+		strings.Contains(msg, "status 429") ||
+		strings.Contains(msg, " 429 ") ||
+		strings.Contains(msg, "code 429")
+}
+
+func pnrpAccountAlertTitle(account *Account, errorMessage string) string {
+	if pnrpIsRateLimitFailure(account, errorMessage) {
+		return "账号限流提醒"
+	}
+	if account != nil && strings.TrimSpace(account.Status) == StatusError {
+		return "账号错误提醒"
+	}
+	return "账号不可用提醒"
 }
 
 func pnrpDeduplicateEmails(raw []string) []string {
