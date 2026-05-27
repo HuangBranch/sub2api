@@ -92,6 +92,12 @@
                       </span>
                       <span class="flex-1 text-left">{{ t('admin.accounts.syncFromCrs') }}</span>
                     </button>
+                    <button class="account-tools-menu-item" @click="openBulkUploadAccounts">
+                      <span class="account-tools-menu-icon bg-cyan-50 text-cyan-600 dark:bg-cyan-900/30 dark:text-cyan-300">
+                        <Icon name="userPlus" size="sm" />
+                      </span>
+                      <span class="flex-1 text-left">{{ t('admin.accounts.bulkUpload') }}</span>
+                    </button>
                     <button class="account-tools-menu-item" @click="openImportData">
                       <span class="account-tools-menu-icon bg-emerald-50 text-emerald-600 dark:bg-emerald-900/30 dark:text-emerald-300">
                         <Icon name="upload" size="sm" />
@@ -341,7 +347,14 @@
       </template>
       <template #pagination><Pagination v-if="pagination.total > 0" :page="pagination.page" :total="pagination.total" :page-size="pagination.page_size" @update:page="handlePageChange" @update:pageSize="handlePageSizeChange" /></template>
     </TablePageLayout>
-    <CreateAccountModal :show="showCreate" :proxies="proxies" :groups="groups" @close="showCreate = false" @created="reload" />
+    <CreateAccountModal
+      :show="showCreate"
+      :proxies="proxies"
+      :groups="groups"
+      :initial-mode="createInitialMode"
+      @close="handleCreateClose"
+      @created="reload"
+    />
     <EditAccountModal :show="showEdit" :account="edAcc" :proxies="proxies" :groups="groups" @close="showEdit = false" @updated="handleAccountUpdated" />
     <ReAuthAccountModal :show="showReAuth" :account="reAuthAcc" @close="closeReAuthModal" @reauthorized="handleAccountUpdated" />
     <AccountTestModal :show="showTest" :account="testingAcc" @close="closeTestModal" />
@@ -410,6 +423,7 @@ import Icon from '@/components/icons/Icon.vue'
 import ErrorPassthroughRulesModal from '@/components/admin/ErrorPassthroughRulesModal.vue'
 import TLSFingerprintProfilesModal from '@/components/admin/TLSFingerprintProfilesModal.vue'
 import { buildOpenAIUsageRefreshKey } from '@/utils/accountUsageRefresh'
+import { extractApiErrorMessage } from '@/utils/apiError'
 import { formatDateTime, formatRelativeTime } from '@/utils/format'
 import type { Account, AccountPlatform, AccountType, Proxy as AccountProxy, AdminGroup, WindowStats, ClaudeModel } from '@/types'
 
@@ -461,6 +475,7 @@ const selTypes = computed<AccountType[]>(() => {
   return [...types]
 })
 const showCreate = ref(false)
+const createInitialMode = ref<'default' | 'openai-bulk-upload'>('default')
 const showEdit = ref(false)
 const showSync = ref(false)
 const showImportData = ref(false)
@@ -970,6 +985,17 @@ const closeAccountToolsDropdown = () => {
 const openSyncFromCrs = () => {
   closeAccountToolsDropdown()
   showSync.value = true
+}
+
+const openBulkUploadAccounts = () => {
+  closeAccountToolsDropdown()
+  createInitialMode.value = 'openai-bulk-upload'
+  showCreate.value = true
+}
+
+const handleCreateClose = () => {
+  showCreate.value = false
+  createInitialMode.value = 'default'
 }
 
 const openImportData = () => {
@@ -1544,13 +1570,33 @@ const handleSchedule = async (a: Account) => {
 }
 const closeSchedulePanel = () => { showSchedulePanel.value = false; scheduleAcc.value = null; scheduleModelOptions.value = [] }
 const handleReAuth = (a: Account) => { reAuthAcc.value = a; showReAuth.value = true }
+const getRefreshCredentialsErrorMessage = (error: unknown) => {
+  const rawMessage = extractApiErrorMessage(error, t('admin.accounts.refreshTokenFailed'))
+  const reason =
+    error && typeof error === 'object' && 'reason' in error
+      ? String((error as { reason?: unknown }).reason || '')
+      : ''
+
+  if (
+    reason === 'OPENAI_OAUTH_TOKEN_REFRESH_FAILED' ||
+    rawMessage.includes('refresh_token_reused') ||
+    rawMessage.includes('refresh_token_invalidated')
+  ) {
+    return t('admin.accounts.refreshTokenNeedsReauth')
+  }
+
+  return rawMessage
+}
+
 const handleRefresh = async (a: Account) => {
   try {
     const updated = await adminAPI.accounts.refreshCredentials(a.id)
     patchAccountInList(updated)
     enterAutoRefreshSilentWindow()
-  } catch (error) {
+    appStore.showSuccess(t('admin.accounts.refreshTokenSuccess'))
+  } catch (error: unknown) {
     console.error('Failed to refresh credentials:', error)
+    appStore.showError(getRefreshCredentialsErrorMessage(error), 8000)
   }
 }
 const handleRecoverState = async (a: Account) => {

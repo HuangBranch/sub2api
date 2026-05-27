@@ -3116,7 +3116,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, reactive, computed, watch } from 'vue'
+import { ref, reactive, computed, nextTick, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useAppStore } from '@/stores/app'
 import {
@@ -3214,6 +3214,7 @@ interface Props {
   show: boolean
   proxies: Proxy[]
   groups: AdminGroup[]
+  initialMode?: 'default' | 'openai-bulk-upload'
 }
 
 const props = defineProps<Props>()
@@ -3571,10 +3572,26 @@ const canExchangeCode = computed(() => {
   return authCode.trim() && oauth.sessionId.value && !oauth.loading.value
 })
 
+const applyInitialMode = async () => {
+  if (props.initialMode !== 'openai-bulk-upload') return
+
+  form.platform = 'openai'
+  accountCategory.value = 'oauth-based'
+  form.type = 'oauth'
+  step.value = 2
+  allowedModels.value = [...getModelsByPlatform('openai')]
+
+  await nextTick()
+  oauthFlowRef.value?.reset()
+  if (oauthFlowRef.value) {
+    oauthFlowRef.value.inputMethod = 'refresh_token'
+  }
+}
+
 // Watchers
 watch(
   () => props.show,
-  (newVal) => {
+  async (newVal) => {
     if (newVal) {
       // Load TLS fingerprint profiles
       adminAPI.tlsFingerprintProfiles.list()
@@ -3594,6 +3611,7 @@ watch(
         antigravityModelMappings.value = []
         antigravityModelRestrictionMode.value = 'mapping'
       }
+      await applyInitialMode()
     } else {
       resetForm()
     }
