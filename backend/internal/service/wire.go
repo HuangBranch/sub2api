@@ -356,9 +356,11 @@ func ProvideScheduledTestRunnerService(
 	scheduledSvc *ScheduledTestService,
 	accountTestSvc *AccountTestService,
 	rateLimitSvc *RateLimitService,
+	failureNotifier *PNRPAccountFailureEmailNotifier,
 	cfg *config.Config,
 ) *ScheduledTestRunnerService {
 	svc := NewScheduledTestRunnerService(planRepo, scheduledSvc, accountTestSvc, rateLimitSvc, cfg)
+	svc.SetFailureNotifier(failureNotifier)
 	svc.Start()
 	return svc
 }
@@ -519,6 +521,7 @@ var ProviderSet = wire.NewSet(
 	ProvideIdempotencyCleanupService,
 	ProvideScheduledTestService,
 	ProvideScheduledTestRunnerService,
+	NewPNRPAccountFailureEmailNotifier,
 	NewGroupCapacityService,
 	NewChannelService,
 	NewModelPricingResolver,

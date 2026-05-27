@@ -18,7 +18,8 @@ type ScheduledTestRunnerService struct {
 	scheduledSvc   *ScheduledTestService
 	accountTestSvc *AccountTestService
 	rateLimitSvc   *RateLimitService
-	cfg            *config.Config
+	failureNotifier ScheduledTestFailureNotifier
+	cfg             *config.Config
 
 	cron      *cron.Cron
 	startOnce sync.Once
@@ -40,6 +41,13 @@ func NewScheduledTestRunnerService(
 		rateLimitSvc:   rateLimitSvc,
 		cfg:            cfg,
 	}
+}
+
+func (s *ScheduledTestRunnerService) SetFailureNotifier(notifier ScheduledTestFailureNotifier) {
+	if s == nil {
+		return
+	}
+	s.failureNotifier = notifier
 }
 
 // Start begins the cron ticker (every minute).
@@ -130,6 +138,8 @@ func (s *ScheduledTestRunnerService) runOnePlan(ctx context.Context, plan *Sched
 		logger.LegacyPrintf("service.scheduled_test_runner", "[ScheduledTestRunner] plan=%d SaveResult error: %v", plan.ID, err)
 	}
 
+	s.notifyScheduledTestFailure(ctx, plan, result)
+
 	// Auto-recover account if test succeeded and auto_recover is enabled.
 	if result.Status == "success" && plan.AutoRecover {
 		s.tryRecoverAccount(ctx, plan.AccountID, plan.ID)
@@ -144,6 +154,13 @@ func (s *ScheduledTestRunnerService) runOnePlan(ctx context.Context, plan *Sched
 	if err := s.planRepo.UpdateAfterRun(ctx, plan.ID, time.Now(), nextRun); err != nil {
 		logger.LegacyPrintf("service.scheduled_test_runner", "[ScheduledTestRunner] plan=%d UpdateAfterRun error: %v", plan.ID, err)
 	}
+}
+
+func (s *ScheduledTestRunnerService) notifyScheduledTestFailure(ctx context.Context, plan *ScheduledTestPlan, result *ScheduledTestResult) {
+	if s == nil || s.failureNotifier == nil || plan == nil || result == nil || result.Status == "success" {
+		return
+	}
+	s.failureNotifier.NotifyScheduledTestFailure(ctx, plan, result)
 }
 
 // tryRecoverAccount attempts to recover an account from recoverable runtime state.
