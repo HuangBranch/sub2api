@@ -638,7 +638,10 @@ func (r *accountRepository) ListByGroup(ctx context.Context, groupID int64) ([]s
 
 func (r *accountRepository) ListActive(ctx context.Context) ([]service.Account, error) {
 	accounts, err := r.client.Account.Query().
-		Where(dbaccount.StatusEQ(service.StatusActive)).
+		Where(
+			dbaccount.DeletedAtIsNil(),
+			dbaccount.StatusEQ(service.StatusActive),
+		).
 		Order(dbent.Asc(dbaccount.FieldPriority)).
 		All(ctx)
 	if err != nil {
@@ -650,6 +653,7 @@ func (r *accountRepository) ListActive(ctx context.Context) ([]service.Account, 
 func (r *accountRepository) ListByPlatform(ctx context.Context, platform string) ([]service.Account, error) {
 	accounts, err := r.client.Account.Query().
 		Where(
+			dbaccount.DeletedAtIsNil(),
 			dbaccount.PlatformEQ(platform),
 			dbaccount.StatusEQ(service.StatusActive),
 		).
@@ -927,6 +931,7 @@ func (r *accountRepository) ListSchedulable(ctx context.Context) ([]service.Acco
 	now := time.Now()
 	accounts, err := r.client.Account.Query().
 		Where(
+			dbaccount.DeletedAtIsNil(),
 			dbaccount.StatusEQ(service.StatusActive),
 			dbaccount.SchedulableEQ(true),
 			tempUnschedulablePredicate(),
@@ -953,6 +958,7 @@ func (r *accountRepository) ListSchedulableByPlatform(ctx context.Context, platf
 	now := time.Now()
 	accounts, err := r.client.Account.Query().
 		Where(
+			dbaccount.DeletedAtIsNil(),
 			dbaccount.PlatformEQ(platform),
 			dbaccount.StatusEQ(service.StatusActive),
 			dbaccount.SchedulableEQ(true),
@@ -987,6 +993,7 @@ func (r *accountRepository) ListSchedulableByPlatforms(ctx context.Context, plat
 	now := time.Now()
 	accounts, err := r.client.Account.Query().
 		Where(
+			dbaccount.DeletedAtIsNil(),
 			dbaccount.PlatformIn(platforms...),
 			dbaccount.StatusEQ(service.StatusActive),
 			dbaccount.SchedulableEQ(true),
@@ -1007,6 +1014,7 @@ func (r *accountRepository) ListSchedulableUngroupedByPlatform(ctx context.Conte
 	now := time.Now()
 	accounts, err := r.client.Account.Query().
 		Where(
+			dbaccount.DeletedAtIsNil(),
 			dbaccount.PlatformEQ(platform),
 			dbaccount.StatusEQ(service.StatusActive),
 			dbaccount.SchedulableEQ(true),
@@ -1031,6 +1039,7 @@ func (r *accountRepository) ListSchedulableUngroupedByPlatforms(ctx context.Cont
 	now := time.Now()
 	accounts, err := r.client.Account.Query().
 		Where(
+			dbaccount.DeletedAtIsNil(),
 			dbaccount.PlatformIn(platforms...),
 			dbaccount.StatusEQ(service.StatusActive),
 			dbaccount.SchedulableEQ(true),

@@ -481,6 +481,24 @@ func (s *AccountRepoSuite) TestListActive() {
 	s.Require().Equal("active1", accounts[0].Name)
 }
 
+func (s *AccountRepoSuite) TestListActiveAndSchedulableExcludeSoftDeleted() {
+	visible := mustCreateAccount(s.T(), s.client, &service.Account{Name: "visible-active", Status: service.StatusActive, Schedulable: true})
+	deleted := mustCreateAccount(s.T(), s.client, &service.Account{Name: "deleted-active", Status: service.StatusActive, Schedulable: true})
+	s.Require().NoError(s.repo.Delete(s.ctx, deleted.ID), "soft delete account")
+
+	active, err := s.repo.ListActive(s.ctx)
+	s.Require().NoError(err, "ListActive")
+	activeIDs := idsOfAccounts(active)
+	s.Require().Contains(activeIDs, visible.ID)
+	s.Require().NotContains(activeIDs, deleted.ID)
+
+	schedulable, err := s.repo.ListSchedulable(s.ctx)
+	s.Require().NoError(err, "ListSchedulable")
+	schedulableIDs := idsOfAccounts(schedulable)
+	s.Require().Contains(schedulableIDs, visible.ID)
+	s.Require().NotContains(schedulableIDs, deleted.ID)
+}
+
 func (s *AccountRepoSuite) TestListByPlatform() {
 	mustCreateAccount(s.T(), s.client, &service.Account{Name: "p1", Platform: service.PlatformAnthropic, Status: service.StatusActive})
 	mustCreateAccount(s.T(), s.client, &service.Account{Name: "p2", Platform: service.PlatformOpenAI, Status: service.StatusActive})
