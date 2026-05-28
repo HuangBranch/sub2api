@@ -7,6 +7,8 @@ import (
 	"time"
 )
 
+const pnrpAccountAlertScanInterval = 30 * time.Second
+
 type PNRPAccountAlertHealthChecker struct {
 	notifier *PNRPAccountFailureEmailNotifier
 
@@ -48,7 +50,7 @@ func (c *PNRPAccountAlertHealthChecker) Stop() {
 }
 
 func (c *PNRPAccountAlertHealthChecker) loop() {
-	ticker := time.NewTicker(time.Minute)
+	ticker := time.NewTicker(pnrpAccountAlertScanInterval)
 	defer ticker.Stop()
 
 	c.runIfDue()
