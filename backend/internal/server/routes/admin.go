@@ -285,6 +285,7 @@ func registerAccountRoutes(admin *gin.RouterGroup, h *handler.Handlers) {
 		accounts.POST("/sync/crs/preview", h.Admin.Account.PreviewFromCRS)
 		accounts.GET("/pnrp-alert-config", h.Admin.PNRPAccountAlert.GetConfig)
 		accounts.PUT("/pnrp-alert-config", h.Admin.PNRPAccountAlert.UpdateConfig)
+		accounts.POST("/pnrp-alert-check", h.Admin.PNRPAccountAlert.RunCheck)
 		accounts.POST("/today-stats/batch", h.Admin.Account.GetBatchTodayStats)
 		accounts.POST("/batch", h.Admin.Account.BatchCreate)
 		accounts.GET("/data", h.Admin.Account.ExportData)

@@ -10,10 +10,11 @@ import (
 
 type PNRPAccountAlertHandler struct {
 	configService *service.PNRPAccountAlertConfigService
+	notifier      *service.PNRPAccountFailureEmailNotifier
 }
 
-func NewPNRPAccountAlertHandler(configService *service.PNRPAccountAlertConfigService) *PNRPAccountAlertHandler {
-	return &PNRPAccountAlertHandler{configService: configService}
+func NewPNRPAccountAlertHandler(configService *service.PNRPAccountAlertConfigService, notifier *service.PNRPAccountFailureEmailNotifier) *PNRPAccountAlertHandler {
+	return &PNRPAccountAlertHandler{configService: configService, notifier: notifier}
 }
 
 // GetConfig returns the PNRP custom account alert configuration.
@@ -30,6 +31,22 @@ func (h *PNRPAccountAlertHandler) GetConfig(c *gin.Context) {
 		return
 	}
 	response.Success(c, cfg)
+}
+
+// RunCheck runs one PNRP custom account alert check immediately.
+// POST /api/v1/admin/accounts/pnrp-alert-check
+func (h *PNRPAccountAlertHandler) RunCheck(c *gin.Context) {
+	if h == nil || h.notifier == nil {
+		response.Error(c, http.StatusServiceUnavailable, "PNRP account alert service not available")
+		return
+	}
+
+	summary, err := h.notifier.RunAccountAlertCheck(c.Request.Context(), true)
+	if err != nil {
+		response.ErrorFrom(c, err)
+		return
+	}
+	response.Success(c, summary)
 }
 
 // UpdateConfig updates the PNRP custom account alert configuration.

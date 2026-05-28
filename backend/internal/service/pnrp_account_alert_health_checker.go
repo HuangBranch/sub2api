@@ -69,7 +69,7 @@ func (c *PNRPAccountAlertHealthChecker) runIfDue() {
 
 	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
 	cfg := c.notifier.resolveConfig(ctx)
-	if !cfg.Enabled || !cfg.MinAvailableAccountsEnabled {
+	if !cfg.Enabled {
 		cancel()
 		return
 	}
@@ -79,8 +79,10 @@ func (c *PNRPAccountAlertHealthChecker) runIfDue() {
 		return
 	}
 	c.lastRun = time.Now()
-	c.notifier.NotifyAvailableAccountThreshold(ctx)
+	if _, err := c.notifier.RunAccountAlertCheck(ctx, false); err != nil {
+		slog.Warn("pnrp account alert check failed", "error", err)
+	}
 	cancel()
 
-	slog.Debug("pnrp account alert availability check completed")
+	slog.Debug("pnrp account alert check completed")
 }
