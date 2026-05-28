@@ -599,10 +599,10 @@ func (n *PNRPAccountFailureEmailNotifier) buildAccountLimitEmailBody(siteName st
 		"系统检测到账号处于限流、过载或临时不可调度状态。此类限制提醒同一个限制周期只发送一次；限制解除后会再发送恢复提醒。",
 		account,
 		map[string]string{
-			"限制类型": issue.Reason,
-			"限制详情": issue.Detail,
+			"限制类型":   issue.Reason,
+			"限制详情":   issue.Detail,
 			"预计恢复时间": issue.Until,
-			"检测时间": detectedAt.Format(time.RFC3339),
+			"检测时间":   detectedAt.Format(time.RFC3339),
 		},
 		fmt.Sprintf("账号 ID %d 当前限制：%s", accountID, issue.Detail),
 	)
