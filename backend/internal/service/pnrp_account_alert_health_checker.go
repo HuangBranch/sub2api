@@ -10,10 +10,10 @@ import (
 type PNRPAccountAlertHealthChecker struct {
 	notifier *PNRPAccountFailureEmailNotifier
 
-	startOnce sync.Once
-	stopOnce  sync.Once
-	stopCh    chan struct{}
-	lastRun   time.Time
+	startOnce           sync.Once
+	stopOnce            sync.Once
+	stopCh              chan struct{}
+	lastAvailabilityRun time.Time
 }
 
 func NewPNRPAccountAlertHealthChecker(notifier *PNRPAccountFailureEmailNotifier) *PNRPAccountAlertHealthChecker {
@@ -74,12 +74,11 @@ func (c *PNRPAccountAlertHealthChecker) runIfDue() {
 		return
 	}
 	interval := cfg.AvailabilityCheckInterval()
-	if !c.lastRun.IsZero() && time.Since(c.lastRun) < interval {
-		cancel()
-		return
+	includeAvailability := c.lastAvailabilityRun.IsZero() || time.Since(c.lastAvailabilityRun) >= interval
+	if includeAvailability {
+		c.lastAvailabilityRun = time.Now()
 	}
-	c.lastRun = time.Now()
-	if _, err := c.notifier.RunAccountAlertCheck(ctx, false); err != nil {
+	if _, err := c.notifier.runAccountAlertCheck(ctx, false, includeAvailability); err != nil {
 		slog.Warn("pnrp account alert check failed", "error", err)
 	}
 	cancel()

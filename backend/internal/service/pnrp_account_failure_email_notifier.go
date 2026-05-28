@@ -19,12 +19,17 @@ const (
 	pnrpAccountAlertSettingPrefix = "pnrp_account_alert:"
 )
 
+const pnrpAccountAlertBeijingOffsetSeconds = 8 * 60 * 60
+
 const (
 	pnrpAccountAlertKindScheduledTest = "scheduled_test"
 	pnrpAccountAlertKindAvailability  = "availability"
 	pnrpAccountAlertKindAccountLimit  = "account_limit"
+	pnrpAccountAlertKindRecoverySoon  = "account_limit_recovery_soon"
 	pnrpAccountAlertKindAccountError  = "account_error"
 )
+
+const pnrpAccountAlertLimitRecoveryLead = 2 * time.Minute
 
 // ScheduledTestFailureNotifier is a narrow hook used by the scheduled test runner.
 // PNRP custom alerting lives behind this interface so the upstream runner only
@@ -60,6 +65,7 @@ type PNRPAccountAlertCheckSummary struct {
 	EmailsSent                  int       `json:"emails_sent"`
 	EmailsFailed                int       `json:"emails_failed"`
 	LimitAlertsSent             int       `json:"limit_alerts_sent"`
+	LimitRecoverySoonAlertsSent int       `json:"limit_recovery_soon_alerts_sent"`
 	LimitRecoveryAlertsSent     int       `json:"limit_recovery_alerts_sent"`
 	ErrorAlertsSent             int       `json:"error_alerts_sent"`
 	AvailabilityAlertsSent      int       `json:"availability_alerts_sent"`
@@ -75,6 +81,7 @@ type pnrpAccountLimitIssue struct {
 	Reason    string
 	Detail    string
 	Until     string
+	UntilAt   time.Time
 	Signature string
 }
 
@@ -165,6 +172,10 @@ func (n *PNRPAccountFailureEmailNotifier) sendScheduledTestFailureEmail(accountI
 }
 
 func (n *PNRPAccountFailureEmailNotifier) RunAccountAlertCheck(ctx context.Context, manual bool) (PNRPAccountAlertCheckSummary, error) {
+	return n.runAccountAlertCheck(ctx, manual, true)
+}
+
+func (n *PNRPAccountFailureEmailNotifier) runAccountAlertCheck(ctx context.Context, manual bool, includeAvailability bool) (PNRPAccountAlertCheckSummary, error) {
 	startedAt := time.Now().UTC()
 	summary := PNRPAccountAlertCheckSummary{
 		Manual:    manual,
@@ -206,7 +217,7 @@ func (n *PNRPAccountFailureEmailNotifier) RunAccountAlertCheck(ctx context.Conte
 	if cfg.ErrorFailureEnabled {
 		n.checkAccountErrorAlerts(ctx, accounts, recipients, siteName, now, &summary)
 	}
-	if cfg.MinAvailableAccountsEnabled {
+	if includeAvailability && cfg.MinAvailableAccountsEnabled {
 		n.checkAvailabilityAlerts(ctx, recipients, siteName, now, cfg.MinAvailableAccounts, &summary)
 	}
 
@@ -261,21 +272,21 @@ func (n *PNRPAccountFailureEmailNotifier) checkAccountLimitAlerts(ctx context.Co
 			continue
 		}
 		stateKey := pnrpAccountAlertSettingKey(pnrpAccountAlertKindAccountLimit, strconv.FormatInt(account.ID, 10))
+		recoverySoonStateKey := pnrpAccountAlertSettingKey(pnrpAccountAlertKindRecoverySoon, strconv.FormatInt(account.ID, 10))
 		issue, limited := pnrpDetectAccountLimit(account, now)
 		if limited {
 			summary.LimitedAccounts++
-			if _, ok := n.loadAlertState(ctx, stateKey); ok {
-				continue
+			if _, ok := n.loadAlertState(ctx, stateKey); !ok {
+				subject := fmt.Sprintf("[%s] 账号限制提醒 - %s", sanitizeEmailHeader(siteName), sanitizeEmailHeader(pnrpAccountDisplayName(account, account.ID)))
+				body := n.buildAccountLimitEmailBody(siteName, account, issue, now)
+				result := n.sendAlertEmail(recipients, subject, body, "account_limit", "account_id", account.ID)
+				mergePNRPEmailResult(summary, result)
+				if result.Sent > 0 {
+					summary.LimitAlertsSent++
+					n.rememberSent(ctx, stateKey, issue.Signature, now)
+				}
 			}
-
-			subject := fmt.Sprintf("[%s] 账号限制提醒 - %s", sanitizeEmailHeader(siteName), sanitizeEmailHeader(pnrpAccountDisplayName(account, account.ID)))
-			body := n.buildAccountLimitEmailBody(siteName, account, issue, now)
-			result := n.sendAlertEmail(recipients, subject, body, "account_limit", "account_id", account.ID)
-			mergePNRPEmailResult(summary, result)
-			if result.Sent > 0 {
-				summary.LimitAlertsSent++
-				n.rememberSent(ctx, stateKey, issue.Signature, now)
-			}
+			n.checkAccountLimitRecoverySoonAlert(ctx, account, issue, recipients, siteName, now, recoverySoonStateKey, summary)
 			continue
 		}
 
@@ -287,8 +298,31 @@ func (n *PNRPAccountFailureEmailNotifier) checkAccountLimitAlerts(ctx context.Co
 			if result.Sent > 0 {
 				summary.LimitRecoveryAlertsSent++
 				n.forgetSent(ctx, stateKey)
+				n.forgetSent(ctx, recoverySoonStateKey)
 			}
+			continue
 		}
+		if _, ok := n.loadAlertState(ctx, recoverySoonStateKey); ok {
+			n.forgetSent(ctx, recoverySoonStateKey)
+		}
+	}
+}
+
+func (n *PNRPAccountFailureEmailNotifier) checkAccountLimitRecoverySoonAlert(ctx context.Context, account *Account, issue pnrpAccountLimitIssue, recipients []string, siteName string, now time.Time, stateKey string, summary *PNRPAccountAlertCheckSummary) {
+	if !pnrpAccountLimitRecoverySoonDue(account, issue, now) {
+		return
+	}
+	if n.stateMatches(ctx, stateKey, issue.Signature) {
+		return
+	}
+
+	subject := fmt.Sprintf("[%s] 账号即将恢复 - %s", sanitizeEmailHeader(siteName), sanitizeEmailHeader(pnrpAccountDisplayName(account, account.ID)))
+	body := n.buildAccountLimitRecoverySoonEmailBody(siteName, account, issue, now)
+	result := n.sendAlertEmail(recipients, subject, body, "account_limit_recovery_soon", "account_id", account.ID)
+	mergePNRPEmailResult(summary, result)
+	if result.Sent > 0 {
+		summary.LimitRecoverySoonAlertsSent++
+		n.rememberSent(ctx, stateKey, issue.Signature, now)
 	}
 }
 
@@ -581,7 +615,7 @@ func (n *PNRPAccountFailureEmailNotifier) buildEmailBody(siteName string, alertT
 		htmlEscape(status),
 		planID,
 		htmlEscape(modelID),
-		htmlEscape(failedAt.Format(time.RFC3339)),
+		htmlEscape(pnrpAccountAlertFormatBeijingTime(failedAt)),
 		htmlEscape(errorMessage),
 		cooldownMinutes,
 	)
@@ -602,7 +636,7 @@ func (n *PNRPAccountFailureEmailNotifier) buildAccountLimitEmailBody(siteName st
 			"限制类型":   issue.Reason,
 			"限制详情":   issue.Detail,
 			"预计恢复时间": issue.Until,
-			"检测时间":   detectedAt.Format(time.RFC3339),
+			"检测时间":   pnrpAccountAlertFormatBeijingTime(detectedAt),
 		},
 		fmt.Sprintf("账号 ID %d 当前限制：%s", accountID, issue.Detail),
 	)
@@ -617,9 +651,31 @@ func (n *PNRPAccountFailureEmailNotifier) buildAccountLimitRecoveryEmailBody(sit
 		account,
 		map[string]string{
 			"恢复状态": "当前未检测到限流、过载或临时不可调度窗口",
-			"检测时间": detectedAt.Format(time.RFC3339),
+			"检测时间": pnrpAccountAlertFormatBeijingTime(detectedAt),
 		},
 		"账号限制状态已恢复。",
+	)
+}
+
+func (n *PNRPAccountFailureEmailNotifier) buildAccountLimitRecoverySoonEmailBody(siteName string, account *Account, issue pnrpAccountLimitIssue, detectedAt time.Time) string {
+	remaining := "-"
+	if !issue.UntilAt.IsZero() && issue.UntilAt.After(detectedAt) {
+		remaining = pnrpAccountAlertFormatDuration(issue.UntilAt.Sub(detectedAt))
+	}
+	return n.buildAccountAlertEmailBody(
+		siteName,
+		"账号即将恢复",
+		"#2563eb",
+		"系统检测到账号限制预计会在 1-2 分钟内解除。该提醒同一个限制周期只发送一次，方便你提前知道账号即将重新进入调度。",
+		account,
+		map[string]string{
+			"限制类型":   issue.Reason,
+			"限制详情":   issue.Detail,
+			"预计恢复时间": issue.Until,
+			"预计剩余时间": remaining,
+			"检测时间":   pnrpAccountAlertFormatBeijingTime(detectedAt),
+		},
+		fmt.Sprintf("账号预计将在 %s 后恢复。", remaining),
 	)
 }
 
@@ -632,7 +688,7 @@ func (n *PNRPAccountFailureEmailNotifier) buildAccountErrorEmailBody(siteName st
 		account,
 		map[string]string{
 			"错误原因": errorMessage,
-			"检测时间": detectedAt.Format(time.RFC3339),
+			"检测时间": pnrpAccountAlertFormatBeijingTime(detectedAt),
 		},
 		errorMessage,
 	)
@@ -749,7 +805,7 @@ func (n *PNRPAccountFailureEmailNotifier) buildAvailabilityEmailBody(siteName st
 		availableCount,
 		totalCount,
 		threshold,
-		htmlEscape(detectedAt.Format(time.RFC3339)),
+		htmlEscape(pnrpAccountAlertFormatBeijingTime(detectedAt)),
 	)
 }
 
@@ -775,40 +831,78 @@ func pnrpDetectAccountLimit(account *Account, now time.Time) (pnrpAccountLimitIs
 	}
 	parts := make([]string, 0, 3)
 	if account.RateLimitResetAt != nil && now.Before(account.RateLimitResetAt.UTC()) {
-		until := account.RateLimitResetAt.UTC().Format(time.RFC3339)
-		parts = append(parts, "rate_limit:"+until)
+		untilUTC := account.RateLimitResetAt.UTC()
+		parts = append(parts, "rate_limit:"+untilUTC.Format(time.RFC3339))
 		return pnrpAccountLimitIssue{
 			Reason:    "限流",
 			Detail:    "账号触发 rate limit，调度会等到重置时间后再尝试使用。",
-			Until:     until,
+			Until:     pnrpAccountAlertFormatBeijingTime(untilUTC),
+			UntilAt:   untilUTC,
 			Signature: strings.Join(parts, "|"),
 		}, true
 	}
 	if account.OverloadUntil != nil && now.Before(account.OverloadUntil.UTC()) {
-		until := account.OverloadUntil.UTC().Format(time.RFC3339)
-		parts = append(parts, "overload:"+until)
+		untilUTC := account.OverloadUntil.UTC()
+		parts = append(parts, "overload:"+untilUTC.Format(time.RFC3339))
 		return pnrpAccountLimitIssue{
 			Reason:    "过载保护",
 			Detail:    "账号处于过载保护窗口，调度会暂时跳过该账号。",
-			Until:     until,
+			Until:     pnrpAccountAlertFormatBeijingTime(untilUTC),
+			UntilAt:   untilUTC,
 			Signature: strings.Join(parts, "|"),
 		}, true
 	}
 	if account.TempUnschedulableUntil != nil && now.Before(account.TempUnschedulableUntil.UTC()) {
-		until := account.TempUnschedulableUntil.UTC().Format(time.RFC3339)
+		untilUTC := account.TempUnschedulableUntil.UTC()
 		reason := strings.TrimSpace(account.TempUnschedulableReason)
 		if reason == "" {
 			reason = "临时不可调度"
 		}
-		parts = append(parts, "temp_unschedulable:"+until+":"+reason)
+		parts = append(parts, "temp_unschedulable:"+untilUTC.Format(time.RFC3339)+":"+reason)
 		return pnrpAccountLimitIssue{
 			Reason:    "临时不可调度",
 			Detail:    reason,
-			Until:     until,
+			Until:     pnrpAccountAlertFormatBeijingTime(untilUTC),
+			UntilAt:   untilUTC,
 			Signature: strings.Join(parts, "|"),
 		}, true
 	}
 	return pnrpAccountLimitIssue{}, false
+}
+
+func pnrpAccountLimitRecoverySoonDue(account *Account, issue pnrpAccountLimitIssue, now time.Time) bool {
+	if account == nil || account.ID <= 0 {
+		return false
+	}
+	if issue.UntilAt.IsZero() || !now.Before(issue.UntilAt) {
+		return false
+	}
+	return issue.UntilAt.Sub(now) <= pnrpAccountAlertLimitRecoveryLead
+}
+
+func pnrpAccountAlertFormatBeijingTime(value time.Time) string {
+	if value.IsZero() {
+		return "-"
+	}
+	location := time.FixedZone("Beijing Time", pnrpAccountAlertBeijingOffsetSeconds)
+	beijingTime := value.In(location)
+	return beijingTime.Format("2006-01-02 15:04:05") + " 北京时间 (UTC" + beijingTime.Format("-07:00") + ")"
+}
+
+func pnrpAccountAlertFormatDuration(value time.Duration) string {
+	if value < 0 {
+		value = 0
+	}
+	totalSeconds := int64(value.Round(time.Second).Seconds())
+	minutes := totalSeconds / 60
+	seconds := totalSeconds % 60
+	if minutes <= 0 {
+		return fmt.Sprintf("%d 秒", seconds)
+	}
+	if seconds == 0 {
+		return fmt.Sprintf("%d 分钟", minutes)
+	}
+	return fmt.Sprintf("%d 分 %d 秒", minutes, seconds)
 }
 
 func pnrpAccountGroupNames(account *Account) string {
